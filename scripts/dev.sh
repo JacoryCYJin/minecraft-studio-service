@@ -8,7 +8,8 @@ LOG_DIR="$RUNTIME_DIR/logs"
 
 # name|directory|start command|port
 SERVICES=(
-  "skin-generation|services/skin-generation|bash scripts/run-local.sh|8011"
+  "monadical|services/skin-generation|bash scripts/run-local.sh|8011"
+  "block|services/block-skin-generation|bash scripts/run-local.sh|8012"
 )
 
 usage() {
@@ -16,8 +17,9 @@ usage() {
 Minecraft Studio Service 开发服务脚本
 
 用法:
-  bash scripts/dev.sh                    启动全部服务
+  bash scripts/dev.sh                    启动 Monadical 文本生成链路
   bash scripts/dev.sh <service>          启动单个服务
+  bash scripts/dev.sh all                启动全部服务
   bash scripts/dev.sh restart [service]  重启全部或单个服务
   bash scripts/dev.sh stop [service]     停止全部或单个服务
   bash scripts/dev.sh status             查看运行状态
@@ -25,7 +27,11 @@ Minecraft Studio Service 开发服务脚本
   bash scripts/dev.sh list               列出可用服务（同 ls）
 
 可用服务:
-  skin-generation
+  monadical       纯文字 → Skin（8011）
+  block           双视角预览图 → Skin（8012）
+
+兼容别名:
+  skin-generation 等同于 monadical
 EOF
 }
 
@@ -33,10 +39,19 @@ ensure_runtime_dirs() {
   mkdir -p "$PID_DIR" "$LOG_DIR"
 }
 
+normalize_service_name() {
+  case "$1" in
+    skin-generation) printf '%s' "monadical" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 get_service_field() {
-  local service="$1"
+  local service
   local index="$2"
   local item name dir cmd port
+
+  service="$(normalize_service_name "$1")"
 
   for item in "${SERVICES[@]}"; do
     IFS='|' read -r name dir cmd port <<< "$item"
@@ -163,7 +178,7 @@ ensure_service_dependencies() {
   local workdir="$2"
 
   case "$service" in
-    skin-generation)
+    monadical|block)
       if [[ ! -x "$workdir/.venv/bin/python" ]]; then
         echo "[$service] 未检测到本地 Python 环境，正在初始化依赖..."
         (cd "$workdir" && bash scripts/bootstrap.sh)
@@ -173,6 +188,10 @@ ensure_service_dependencies() {
 }
 
 pid_file_for() {
+  if [[ "$1" == "monadical" && ! -f "$PID_DIR/monadical.pid" && -f "$PID_DIR/skin-generation.pid" ]]; then
+    printf '%s/%s.pid' "$PID_DIR" "skin-generation"
+    return 0
+  fi
   printf '%s/%s.pid' "$PID_DIR" "$1"
 }
 
@@ -187,12 +206,14 @@ read_pid() {
 }
 
 start_service() {
-  local service="$1"
+  local service
   local dir cmd port workdir pid pid_file log_file listener_pid
+
+  service="$(normalize_service_name "$1")"
 
   if ! service_exists "$service"; then
     echo "未知服务: $service" >&2
-    echo "可用服务: skin-generation" >&2
+    echo "可用服务: monadical, block" >&2
     exit 1
   fi
 
@@ -244,8 +265,10 @@ start_service() {
 }
 
 stop_service() {
-  local service="$1"
+  local service
   local pid pid_file port
+
+  service="$(normalize_service_name "$1")"
 
   if ! service_exists "$service"; then
     echo "未知服务: $service" >&2
@@ -292,7 +315,7 @@ print_status() {
 }
 
 main() {
-  local action="${1:-start}"
+  local action="${1:-monadical}"
   local target="${2:-}"
 
   ensure_runtime_dirs
@@ -311,12 +334,12 @@ main() {
         for item in "${SERVICES[@]}"; do IFS='|' read -r name _ _ _ <<< "$item"; restart_service "$name"; done
       fi
       ;;
-    start)
+    start|all)
       if [[ -n "$target" ]]; then start_service "$target"; else
         for item in "${SERVICES[@]}"; do IFS='|' read -r name _ _ _ <<< "$item"; start_service "$name"; done
       fi
       ;;
-    skin-generation) start_service "$action" ;;
+    monadical|block|skin-generation) start_service "$action" ;;
     *)
       echo "未知命令: $action" >&2
       usage
