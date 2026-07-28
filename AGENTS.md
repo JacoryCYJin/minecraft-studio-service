@@ -5,7 +5,8 @@
 
 ## Scope
 
-- 当前模块：`services/skin-generation/`，用于本地 AI 完整皮肤生成 POC。
+- 当前模块：`services/skin-generation/`（Monadical 文本生成）与
+  `services/block-skin-generation/`（BLOCK 预览图转换），两者独立运行。
 - 预留模块：`services/cape-design/`、`services/building-preview/`。
 - 各模块通过独立 HTTP API 对外提供能力；网站或其他客户端只能调用 API，不能
   引入模型运行时代码或权重。
@@ -20,8 +21,11 @@
 ```bash
 cd minecraft-studio-service
 bash scripts/dev.sh
+bash scripts/dev.sh monadical
+bash scripts/dev.sh block
+bash scripts/dev.sh all
 bash scripts/dev.sh status
-bash scripts/dev.sh stop skin-generation
+bash scripts/dev.sh stop block
 
 cd services/skin-generation
 .venv/bin/python -m compileall app scripts/verify-artifact.py
