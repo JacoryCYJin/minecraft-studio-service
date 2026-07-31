@@ -7,12 +7,16 @@ preview into a 64×64 skin candidate.
 ## Input and output
 
 - Input: one character preview image containing matched front and back views.
-- Optional input: a short prompt and `classic` or `slim` model hint.
+- Optional input: a short prompt and `classic` or `slim` model hint. Classic is
+  the default baseline. Only an explicit `slim` request adds the Java Slim
+  3-pixel-arm UV instruction to the BLOCK prompt.
 - Output: the original preview, raw BLOCK image and nearest-neighbour 64×64
   skin derivative in this module's `.artifacts/` directory. In the standard
   Minecraft outer-layer UV slots only, pixels with all RGB channels at least
   `245` are made transparent. The base layer and grey, skin-tone or coloured
-  outer pixels are preserved.
+  outer pixels are preserved. When `model=slim`, the four unused Java Slim arm
+  UV slots are also made transparent, so a later skin import can identify the
+  file as Slim.
 
 The input preview is normally made with the long conversation prompt in
 `docs/skin-preview-conversation-prompt.md`. This module does not generate that

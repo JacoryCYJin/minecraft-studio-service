@@ -8,7 +8,7 @@ from typing import Literal
 
 from PIL import Image, UnidentifiedImageError
 
-from .validation import SkinValidation, clear_near_white_outer_pixels, validate_skin
+from .validation import SkinValidation, clear_near_white_outer_pixels, clear_slim_unused_arm_pixels, validate_skin
 
 
 MODEL_ID = "AliceKJ/BLOCKv0.6"
@@ -110,10 +110,14 @@ class BlockSkinGenerator:
             "Image-to-image translation using the reference image. The reference shows the same 3D Minecraft "
             "character with front and back views in a single image. Generate the corresponding Minecraft skin UV "
             "atlas in 64x64 pixel-art UV layout. Flat shading, sharp pixel edges, no blur, no anti-aliasing. "
-            "Keep consistent UV placement and mapping; match the same character design from the reference. "
-            f"Model type: {model}."
+            "Keep consistent UV placement and mapping; match the same character design from the reference."
         )
-        return f"{base} Additional direction: {direction}" if direction else base
+        slim_instruction = (
+            " Use the Java Slim 3-pixel arm UV layout and leave its unused arm slots transparent."
+            if model == "slim"
+            else ""
+        )
+        return f"{base}{slim_instruction} Additional direction: {direction}" if direction else f"{base}{slim_instruction}"
 
     @staticmethod
     def _to_skin_atlas(raw: Image.Image) -> Image.Image:
@@ -143,6 +147,9 @@ class BlockSkinGenerator:
             raise BlockGenerationError(f"BLOCK inference failed: {error}") from error
 
         skin, cleared_outer_pixels = clear_near_white_outer_pixels(self._to_skin_atlas(raw))
+        cleared_slim_pixels = 0
+        if model == "slim":
+            skin, cleared_slim_pixels = clear_slim_unused_arm_pixels(skin)
         validation = validate_skin(skin)
         if cleared_outer_pixels:
             validation = SkinValidation(
@@ -152,7 +159,10 @@ class BlockSkinGenerator:
         if model == "slim":
             validation = SkinValidation(
                 validation.status,
-                (*validation.warnings, "BLOCK model type is prompt-guided; inspect Slim arm seams in a 3D preview."),
+                (
+                    *validation.warnings,
+                    f"Cleared {cleared_slim_pixels} unused Slim arm UV pixels for standard model detection; inspect Slim arm seams in a 3D preview.",
+                ),
             )
 
         self.artifacts_dir.mkdir(parents=True, exist_ok=True)

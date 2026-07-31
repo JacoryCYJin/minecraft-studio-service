@@ -16,6 +16,12 @@ OUTER_LAYER_BOXES = (
     (0, 48, 16, 64),   # left leg outer layer
 )
 OUTER_WHITE_THRESHOLD = 245
+SLIM_UNUSED_ARM_BOXES = (
+    (50, 16, 52, 20),  # right arm top/bottom spare column
+    (54, 20, 56, 32),  # right arm front/back spare column
+    (42, 48, 44, 52),  # left arm top/bottom spare column
+    (46, 52, 48, 64),  # left arm front/back spare column
+)
 
 
 @dataclass(frozen=True)
@@ -44,6 +50,27 @@ def clear_near_white_outer_pixels(image: Image.Image) -> tuple[Image.Image, int]
                 red, green, blue, alpha = pixels[x, y]
                 if alpha > 0 and red >= OUTER_WHITE_THRESHOLD and green >= OUTER_WHITE_THRESHOLD and blue >= OUTER_WHITE_THRESHOLD:
                     pixels[x, y] = (red, green, blue, 0)
+                    cleared += 1
+
+    return atlas, cleared
+
+
+def clear_slim_unused_arm_pixels(image: Image.Image) -> tuple[Image.Image, int]:
+    """Clear only the UV slots that do not exist on the Java Slim arm mesh.
+
+    A 64×64 PNG carries no separate model-type flag. Standard skin viewers
+    infer Slim from transparency in these unused slots, so BLOCK's opaque
+    image output must be normalized when the caller explicitly selected Slim.
+    """
+    atlas = image.convert("RGBA")
+    pixels = atlas.load()
+    cleared = 0
+
+    for left, top, right, bottom in SLIM_UNUSED_ARM_BOXES:
+        for y in range(top, bottom):
+            for x in range(left, right):
+                if pixels[x, y][3] > 0:
+                    pixels[x, y] = (0, 0, 0, 0)
                     cleared += 1
 
     return atlas, cleared
