@@ -18,8 +18,7 @@ preview into a 64×64 skin candidate.
   UV slots are also made transparent, so a later skin import can identify the
   file as Slim.
 
-The input preview is normally made with the long conversation prompt in
-`docs/skin-preview-conversation-prompt.md`. This module does not generate that
+The input preview is supplied by the user. This module does not generate that
 preview from text and does not connect to the website editor in this POC.
 
 ## Run locally
