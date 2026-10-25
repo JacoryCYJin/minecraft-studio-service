@@ -14,24 +14,21 @@ SERVICES=(
 
 usage() {
   cat <<'EOF'
-Minecraft Studio Service 开发服务脚本
+Minecraft Studio Service 开发指令
 
 用法:
-  bash scripts/dev.sh                    启动 Monadical 文本生成链路
-  bash scripts/dev.sh <service>          启动单个服务
-  bash scripts/dev.sh all                启动全部服务
-  bash scripts/dev.sh restart [service]  重启全部或单个服务
-  bash scripts/dev.sh stop [service]     停止全部或单个服务
-  bash scripts/dev.sh status             查看运行状态
-  bash scripts/dev.sh ls                 列出可用服务
-  bash scripts/dev.sh list               列出可用服务（同 ls）
+  bash scripts/dev.sh <动作> [服务]
+  bash scripts/dev.sh start [服务]       启动全部或指定服务
+  bash scripts/dev.sh stop [服务]        停止全部或指定服务
+  bash scripts/dev.sh restart [服务]     重启全部或指定服务
+  bash scripts/dev.sh status [服务]      查看全部或指定服务状态
+  bash scripts/dev.sh logs [服务]        查看最近 120 行日志
+  bash scripts/dev.sh list               列出服务（别名 ls）
+  bash scripts/dev.sh --help             显示帮助，支持 <动作> --help
+构建: 本项目没有 build 步骤，运行环境仍由原启动流程管理。
 
-可用服务:
-  monadical       纯文字 → Skin（8011）
-  block           双视角预览图 → Skin（8012）
-
-兼容别名:
-  skin-generation 等同于 monadical
+服务: monadical、block（skin-generation 是 monadical 的兼容别名）
+未指定服务时操作本项目全部服务。无参数、直接写服务名等旧写法仍兼容并提示规范写法。
 EOF
 }
 
@@ -298,11 +295,12 @@ restart_service() {
 }
 
 print_status() {
-  local item name dir cmd port pid
+  local item name dir cmd port pid target="${1:-}"
   printf '%-24s %-8s %-8s %s\n' "SERVICE" "PORT" "PID" "STATUS"
 
   for item in "${SERVICES[@]}"; do
     IFS='|' read -r name dir cmd port <<< "$item"
+    [[ -z "$target" || "$name" == "$target" ]] || continue
     pid="$(read_pid "$name" || true)"
     if is_pid_running "$pid"; then
       printf '%-24s %-8s %-8s %s\n' "$name" "$port" "$pid" "running"
@@ -314,37 +312,85 @@ print_status() {
   done
 }
 
-main() {
-  local action="${1:-monadical}"
-  local target="${2:-}"
+logs() {
+  local target="${1:-}" item name dir cmd port file
+  for item in "${SERVICES[@]}"; do
+    IFS='|' read -r name dir cmd port <<< "$item"
+    [[ -z "$target" || "$name" == "$target" ]] || continue
+    file="$(log_file_for "$name")"
+    if [[ -f "$file" ]]; then
+      printf '\n--- %s ---\n' "$name"
+      tail -n 120 "$file"
+    else
+      echo "[$name] 暂无日志: $file"
+    fi
+  done
+}
 
+cli_error() {
+  echo "[dev] $*；使用 bash scripts/dev.sh --help 查看用法" >&2
+  return 2
+}
+
+run_service_action() {
+  local action="$1" target="$2" item name rest
   ensure_runtime_dirs
+  if [[ -n "$target" ]]; then
+    "${action}_service" "$target"
+  else
+    for item in "${SERVICES[@]}"; do
+      IFS='|' read -r name rest <<< "$item"
+      "${action}_service" "$name"
+    done
+  fi
+}
 
+main() {
+  local action="${1:-start}" target arg
+  for arg in "$@"; do
+    case "$arg" in -h|--help) usage; return 0 ;; esac
+  done
+  if [[ "$action" == help ]]; then
+    [[ $# -le 2 ]] || { cli_error "help 最多接受一个动作"; return 2; }
+    usage
+    return 0
+  fi
+  if [[ $# -eq 0 ]]; then
+    echo "[兼容] 无参数仍只启动 monadical；请改用: bash scripts/dev.sh start monadical" >&2
+    action=start
+    set -- start monadical
+  fi
+  shift || true
   case "$action" in
-    -h|--help|help) usage ;;
-    list|ls) list_services ;;
-    status) print_status ;;
-    stop)
-      if [[ -n "$target" ]]; then stop_service "$target"; else
-        for item in "${SERVICES[@]}"; do IFS='|' read -r name _ _ _ <<< "$item"; stop_service "$name"; done
-      fi
+    list|ls)
+      [[ $# -eq 0 ]] || { cli_error "list 不接受服务参数"; return 2; }
+      list_services
+      return
       ;;
-    restart)
-      if [[ -n "$target" ]]; then restart_service "$target"; else
-        for item in "${SERVICES[@]}"; do IFS='|' read -r name _ _ _ <<< "$item"; restart_service "$name"; done
-      fi
+    all)
+      echo "[兼容] 请改用: bash scripts/dev.sh start${*:+ $*}" >&2
+      action=start
       ;;
-    start|all)
-      if [[ -n "$target" ]]; then start_service "$target"; else
-        for item in "${SERVICES[@]}"; do IFS='|' read -r name _ _ _ <<< "$item"; start_service "$name"; done
-      fi
+    monadical|block|skin-generation)
+      [[ $# -eq 0 ]] || { cli_error "服务名后不接受额外参数，请使用 start <服务>"; return 2; }
+      echo "[兼容] 请改用: bash scripts/dev.sh start $action" >&2
+      set -- "$action"
+      action=start
       ;;
-    monadical|block|skin-generation) start_service "$action" ;;
-    *)
-      echo "未知命令: $action" >&2
-      usage
-      exit 1
-      ;;
+    start|stop|restart|status|logs) ;;
+    *) cli_error "不支持的动作: $action"; return 2 ;;
+  esac
+  [[ $# -le 1 ]] || { cli_error "$action 最多接受一个服务"; return 2; }
+  target="${1:-}"
+  [[ -z "$target" ]] || target="$(normalize_service_name "$target")"
+  if [[ -n "$target" ]] && ! service_exists "$target"; then
+    cli_error "未知服务: $target"
+    return 2
+  fi
+  case "$action" in
+    status) print_status "$target" ;;
+    logs) logs "$target" ;;
+    *) run_service_action "$action" "$target" ;;
   esac
 }
 
